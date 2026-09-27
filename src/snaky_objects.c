@@ -5,7 +5,7 @@
 #include <string.h>
 #include "vibrant_logs.h"
 #include "dynamic_map_spellbook.h"
-#include "snaky_script.h"
+#include "snaky_objects.h"
 
 #define GROUP_OPENING '{'
 #define GROUP_CLOSING '}'
@@ -67,7 +67,7 @@ int snaky_init()
 {
 	if(init)
 	{
-		vl_log(VL_ERROR, "Cannot re-initialize SnakyScript!\n");
+		vl_log(VL_ERROR, "Cannot re-initialize SnakyAttributeLists!\n");
 		return 0;
 	}
 
@@ -125,7 +125,7 @@ int snaky_init()
 	if(!snaky_define_eval_function("ceil", ceilf))
 		return 0;
 
-	vl_log(VL_SUCCESS, "SnakyScript successfully initialized!\n");
+	vl_log(VL_SUCCESS, "SnakyAttributeLists successfully initialized!\n");
 
 	return 1;
 }
@@ -137,7 +137,7 @@ int snaky_shutdown()
 {
 	if(!init)
 	{
-		vl_log(VL_ERROR, "SnakyScript was never initialized, cannot shutdown!\n");
+		vl_log(VL_ERROR, "SnakyAttributeLists was never initialized, cannot shutdown!\n");
 		return 0;
 	}
 
@@ -145,7 +145,99 @@ int snaky_shutdown()
 	dynmaps_free_strkey(&eval_functions);
 	dynmaps_free_strkey(&functions);
 
-	vl_log(VL_SUCCESS, "SnakyScript successfully shut down!\n");
+	vl_log(VL_SUCCESS, "SnakyAttributeLists successfully shut down!\n");
+
+	return 1;
+}
+
+int snaky_create_str(snaky_string *str, char *data)
+{
+	if(!str || !data)
+		return 0;
+
+	str->data = strdup(data);
+	if(!str->data)
+	{
+		vl_log(VL_ERROR, "Failed to create snaky_string! Memory allocation failed!\n");
+		return 0;
+	}
+	str->len = strlen(data);
+	str->size = str->len + 1; // always one more byte allocated for '\0'
+
+	return 1;
+}
+int snaky_prepare_str(snaky_string *str, size_t bytes)
+{
+	if(!str)
+		return 0;
+
+	str->data = calloc(bytes, sizeof(char));
+	if(!str->data)
+	{
+		vl_log(VL_ERROR, "Failed to prepare snaky_string! Memory allocation failed!\n");
+		return 0;
+	}
+	str->len = bytes;
+	str->size = bytes;
+
+	return 1;
+}
+void snaky_free_str(snaky_string *str)
+{
+	if(!str || !str->data)
+		return;
+
+	free(str->data);
+	str->data = NULL;
+	str->len = 0;
+	str->size = 0;
+}
+int snaky_strcpy(snaky_string *dest, const char *src)
+{
+	if(!dest || !src)
+		return 0;
+
+	// compare lengths of each string
+	size_t curr_size = dest->size;
+	size_t src_len = strlen(src);
+
+	// src_len + 1 represents the total amount of bytes 'src' takes up
+	if(src_len + 1 > curr_size)
+	{
+		// realloc necessary
+
+		size_t bytes_needed = (src_len + 1) - curr_size;
+		if(dest->size >= SIZE_MAX - bytes_needed)
+		{
+			vl_log(VL_ERROR, "SnakyString size is too large! SIZE_MAX reached.\n");
+			return 0;
+		}
+		size_t new_size = dest->size + bytes_needed;
+
+		if(!snaky_realloc_str(dest, new_size))
+			return 0;
+	}
+
+	// perform strcpy here:
+	strcpy(dest->data, src);
+	dest->len = strlen(dest->data);
+
+	return 1;
+}
+int snaky_realloc_str(snaky_string *str, size_t bytes)
+{
+	if(!str)
+		return 0;
+
+	char *new_data = realloc(str->data, bytes);
+	if(!new_data)
+	{
+		vl_log(VL_ERROR, "Failed to reallocate snaky_string's memory!\n");
+		return 0;
+	}
+	str->data = new_data;
+	str->size = bytes;
+	str->len = strlen(str->data);
 
 	return 1;
 }
@@ -165,11 +257,21 @@ static const char *find_end_of_group(const char *start)
 
 			// when the depth matches the starting depth, the end of the group is found
 			if(depth == 0)
+				// p will point to the matching closing character
 				return p;
 		}
 	}
 
 	return NULL;
+}
+
+// skip all whitespace in a string until a valid char is reached
+static void skip_whitespace(const char **str)
+{
+	while(**str && isspace(**str))
+	{
+		(*str)++;
+	}
 }
 
 static int resolve_data_type(const char **attribs_start, snaky_data_type *out_data_type)
@@ -187,8 +289,7 @@ static int resolve_data_type(const char **attribs_start, snaky_data_type *out_da
 			(*attribs_start)++;
 
 			// skip all whitespace after the ':'
-			while(**attribs_start && **attribs_start == ' ')
-				(*attribs_start)++;
+			skip_whitespace(attribs_start);
 
 			// now find which data type the user provided
 			if(strncmp(*attribs_start, "char", 4) == 0)
@@ -249,10 +350,7 @@ static int parse_target_attrib(const char *attribs_start, char *buffer, size_t b
 	attribs_start++;
 
 	// skip all whitespace:
-	while(*attribs_start && *attribs_start == ' ')
-	{
-		attribs_start++;
-	}
+	skip_whitespace(&attribs_start);
 
 	if(!*attribs_start)
 	{
@@ -263,7 +361,7 @@ static int parse_target_attrib(const char *attribs_start, char *buffer, size_t b
 	// if the start of the attribute is an opening of another attribute string, error out
 	if(*attribs_start == '<')
 	{
-		vl_log(VL_ERROR, "Nested attribute strings must be wrapped around opening and closing '\"'!\n");
+		vl_log(VL_ERROR, "Nested attribute strings must be wrapped around '{}'!\n");
 		return 0;
 	}
 
@@ -298,7 +396,11 @@ static int parse_target_attrib(const char *attribs_start, char *buffer, size_t b
 		}
 
 		if(buffer)
+		{
+			if(buffer[i - 1] == '\n')
+				buffer[i - 1] = '\0';
 			buffer[i] = '\0';
+		}
 
 		return 1;
 	}
@@ -309,7 +411,12 @@ static int parse_target_attrib(const char *attribs_start, char *buffer, size_t b
 		buffer[i++] = *attribs_start++;
 
 	if(buffer)
+	{
+		// remove '\n' from buffer
+		if(buffer[i - 1] == '\n')
+			buffer[i - 1] = '\0';
 		buffer[i] = '\0';
+	}
 
 	return 1;
 }
@@ -379,8 +486,7 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 				{
 					const char *attribs_start = p + 1;
 
-					while(*attribs_start && *attribs_start == ' ')
-						attribs_start++;
+					skip_whitespace(&attribs_start);
 
 					if(!*attribs_start)
 					{
@@ -413,8 +519,7 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 			// compare the attribute with the target attribute
 			const char *attribs_start = p + 1;
 
-			while(*attribs_start && *attribs_start == ' ')
-				attribs_start++;
+			skip_whitespace(&attribs_start);
 
 			if(!*attribs_start)
 			{
@@ -435,8 +540,7 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 			const char *attribs_start = p + 1;
 
 			// skip whitespace
-			while(*attribs_start && *attribs_start == ' ')
-				attribs_start++;
+			skip_whitespace(&attribs_start);
 
 			if(!*attribs_start)
 			{
@@ -449,13 +553,6 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 
 			continue;
 		}
-
-		// if a nested attribute string is found, skip it
-		if(c == '<' && in_top_most_level)
-		{
-			vl_log(VL_ERROR, "Nested attributes must be wrapped in opening and closing '\"'\n");
-			return 0;
-		}
 	}
 
 	return 0;
@@ -467,7 +564,8 @@ static int parse_attrib(const char *attribs_start, char *name_buffer, size_t nam
 
 	// 'attribs_start' points to the first char in the attrib name
 	size_t i = 0;
-	while(*attribs_start && *attribs_start != ' ' && *attribs_start != '=' && i + 1 < name_buffer_size)
+	skip_whitespace(&attribs_start);
+	while(*attribs_start && *attribs_start != '=' && i + 1 < name_buffer_size)
 		name_buffer[i++] = *attribs_start++;
 
 	name_buffer[i] = '\0';
@@ -486,7 +584,7 @@ static int parse_attrib(const char *attribs_start, char *name_buffer, size_t nam
 	// if the start of the attribute is an opening of another attribute string, error out
 	if(*attribs_start == '<')
 	{
-		vl_log(VL_ERROR, "Nested attribute strings must be wrapped around opening and closing '\"'!\n");
+		vl_log(VL_ERROR, "Nested attribute strings must be wrapped around '{}'!\n");
 		return 0;
 	}
 
@@ -494,8 +592,7 @@ static int parse_attrib(const char *attribs_start, char *name_buffer, size_t nam
 	attribs_start++;
 
 	// skip all whitespace:
-	while(*attribs_start && *attribs_start == ' ')
-		attribs_start++;
+	skip_whitespace(&attribs_start);
 
 	if(!*attribs_start)
 	{
@@ -593,8 +690,7 @@ int snaky_parse_attrib(const char *str, char *name_buffer, size_t name_buffer_si
 
 			const char *attribs_start = p + 1;
 
-			while(*attribs_start && *attribs_start == ' ')
-				attribs_start++;
+			skip_whitespace(&attribs_start);
 
 			if(!*attribs_start)
 			{
@@ -610,8 +706,7 @@ int snaky_parse_attrib(const char *str, char *name_buffer, size_t name_buffer_si
 		{
 			const char *attribs_start = p + 1;
 
-			while(*attribs_start && *attribs_start == ' ')
-				attribs_start++;
+			skip_whitespace(&attribs_start);
 
 			if(*attribs_start)
 			{
@@ -679,6 +774,48 @@ int snaky_remove_attrib(char *str, const char *attrib_name)
 
 	if(len > 0 && str[len - 1] == ',')
 		str[len - 1] = '>';
+
+	return 1;
+}
+int snaky_remove_attrib_str(snaky_string *str, const char *attrib_name)
+{
+	size_t attrib_name_len = attrib_name ? strlen(attrib_name) : 0;
+
+	if(!str || str->len == 0 || !attrib_name || attrib_name_len == 0)
+		return 0;
+
+	// see if the attrib is found
+	const char *start_pos = NULL;
+	char attrib_value[SNAKY_BUF_SIZE + 1];
+	if(!snaky_parse_target_attrib(str->data, attrib_value, sizeof(attrib_value), attrib_name, &start_pos, NULL))
+	{
+		vl_log(VL_ERROR, "The '%s' attribute was not found in this string: '%s'!\n", attrib_name, str);
+		return 0;
+	}
+
+	// the attrib is present in the string so it can be removed:
+
+	/*
+	   the start_pos pointer points to the first character of the attrib value,
+	   so it can be moved backwards to obtain the total length of the sub-string
+
+	   + 2 for the '=' and attribute separator
+	*/
+	size_t sub_str_len = strlen(attrib_value) + attrib_name_len + 2;
+
+	// now sub_str_len represents the total amount of characters that need to be removed
+
+	// now get a pointer to the first character separating this attribute
+	char *sub_str_start_pos = (char*) (start_pos - attrib_name_len - 1);
+
+	memmove(sub_str_start_pos, sub_str_start_pos + sub_str_len, strlen(sub_str_start_pos + sub_str_len) + 1);
+
+	// see if that was the last attribute in the string, and if so, remove trailing ',' and replace with '>'
+	size_t len = strlen(str->data);
+	str->len = len;
+
+	if(len > 0 && str->data[len - 1] == ',')
+		str->data[len - 1] = '>';
 
 	return 1;
 }
@@ -762,8 +899,97 @@ int snaky_add_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 
 	return 1;
 }
+int snaky_add_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value)
+{
+	if(!str || strlen(str->data) == 0 || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
+		return 0;
 
-static void insert_char_str(char *buffer, char c)
+	// create local pointer copy so that 'data' is not moved
+	char *buf = str->data;
+
+	// see if the attrib is already present in the string
+	char attrib_value[SNAKY_BUF_SIZE + 1];
+	if(snaky_parse_target_attrib(buf, attrib_value, sizeof(attrib_value), attrib_name, NULL, NULL))
+		// if so, just edit the attribute value in the string
+		return snaky_set_attrib_str(str, attrib_name, new_attrib_value);
+
+	/*
+	   otherwise, go to end of attrib list and append the new attribute:
+
+	   the end of the attrib list should look like this:
+
+	   '...attrib_name=attrib_value>'
+	*/
+
+	// go to the next '>' found
+	while(*buf && *buf != '>')
+		buf++;
+
+	if(*buf != '>')
+	{
+		vl_log(VL_ERROR, "Expected '>' to terminate attribute string: '%s'!\n", str->data);
+		return 0;
+	}
+
+	/*
+	   if string already contains at least one arg, append ',' to start another arg
+
+	   if the user passes something like "<>" then the '>' is replaced with '\0' and
+	   the new attrib is appended like normal
+	   */
+	if(snaky_count_attribs(str->data) > 0)
+	{
+		*buf = ',';
+		*++buf = '\0';
+	}
+	else
+		*buf = '\0';
+
+	// append ',attrib_name=new_attrib_value' directly at end
+	size_t i = 0;
+	while(i < strlen(attrib_name) && str->len + 1 < str->size)
+	{
+		// immediately append the next char in attrib_name
+		*buf++ = *(attrib_name + (i++));
+		// to make strlen(...) work the string must be null-terminated
+		*buf = '\0';
+		str->len = strlen(str->data);
+	}
+
+	// append the '='
+	if(str->len < str->size)
+	{
+		*buf++ = '=';
+		*buf = '\0';
+		str->len = strlen(str->data);
+	}
+	else
+		return 0;
+
+	i = 0;
+	while(i < strlen(new_attrib_value) && str->len < str->size)
+	{
+		// append the next char in new_attrib_value
+		*buf++ = *(new_attrib_value + (i++));
+		// to make strlen(...) work the string must be null-terminated
+		*buf = '\0';
+		str->len = strlen(str->data);
+	}
+
+	// close the attribute string
+	if(str->len < str->size)
+	{
+		*buf++ = '>';
+		*buf = '\0';
+		str->len = strlen(str->data);
+	}
+	else
+		return 0;
+
+	return 1;
+}
+
+static void insert_char_buf(char *buffer, char c)
 {
 	// move all chars at pos one slot over to the right
 	memmove(buffer + 1, buffer, strlen(buffer) + 1);
@@ -775,8 +1001,7 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 		return 0;
 
 	char *edit_pos = NULL;
-	size_t edit_len = 0;
-	int curr_len = -1;
+	size_t curr_len = 0;
 	bool attrib_found = false;
 	const char *start_pos = NULL;
 
@@ -784,6 +1009,7 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 	if(snaky_parse_target_attrib(str, attrib_value, sizeof(attrib_value), attrib_name, &start_pos, NULL))
 	{
 		edit_pos = (char*) start_pos;
+		// curr_len is equal to length of the found attribute value
 		curr_len = strlen(attrib_value);
 		attrib_found = true;
 	}
@@ -807,15 +1033,26 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 	}
 
 	// if the attrib wasn't found, it must be added
+	size_t new_len = 0;
 	if(attrib_found)
-		edit_len = strlen(new_attrib_value);
-	else
-		edit_len = strlen(attrib_name) + strlen(new_attrib_value) + 2;
-
-	if(edit_len >= buffer_size || strlen(str) + edit_len >= buffer_size)
 	{
-		vl_log(VL_ERROR, "The given buffer is not large enough to fit the new attribute string: current size = %zu, required size = %zu\n", buffer_size, strlen(str) + edit_len);
-		return 0;
+		new_len = strlen(new_attrib_value);
+
+		if(new_len > curr_len)
+		{
+			size_t new_total_len = strlen(str) + (new_len - curr_len);
+			if(new_total_len + 1 > buffer_size)
+				return 0;
+		}
+	}
+	else
+	{
+		new_len = strlen(attrib_name) + strlen(new_attrib_value) + 3;
+
+		size_t new_total_len = strlen(str) + new_len;
+
+		if(new_total_len + 1 > buffer_size)
+			return 0;
 	}
 
 	if(!attrib_found)
@@ -824,21 +1061,39 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 
 		// walk forward in string until the next '>' is hit
 		while(*str && *str != '>')
+		{
+			if(*str == GROUP_OPENING)
+			{
+				const char *end_of_group = find_end_of_group(str);
+				if(!end_of_group)
+				{
+					vl_log(VL_ERROR, "Group was never closed in string: '%s'!\n", str);
+					return 0;
+				}
+
+				// jump to end of group
+				str = (char*) end_of_group;
+				str++;
+				break;
+			}
+
 			str++;
+		}
 
 		// insert ',' there
-		insert_char_str(str++, ',');
+		insert_char_buf(str++, ',');
+		insert_char_buf(str++, ' ');
 
 		// now insert attrib name
 		for(size_t i = 0; i < strlen(attrib_name); ++i)
-			insert_char_str(str++, *(attrib_name + i));
+			insert_char_buf(str++, *(attrib_name + i));
 
 		// now insert the '='
-		insert_char_str(str++, '=');
+		insert_char_buf(str++, '=');
 
 		// now insert the new attrib value
 		for(size_t i = 0; i < strlen(new_attrib_value); ++i)
-			insert_char_str(str++, *(new_attrib_value + i));
+			insert_char_buf(str++, *(new_attrib_value + i));
 	}
 	else
 	{
@@ -852,6 +1107,130 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 		// then copy the new attrib value into the new space
 		memcpy(edit_pos, new_attrib_value, new_len);
 	}
+
+	return 1;
+}
+int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value)
+{
+	if(!str || strlen(str->data) == 0 || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
+		return 0;
+
+	// copy of str->data pointer
+	char *buf = str->data;
+
+	char *edit_pos = NULL;
+	size_t curr_len = 0;
+	bool attrib_found = false;
+	const char *start_pos = NULL;
+
+	char attrib_value[SNAKY_BUF_SIZE + 1];
+	if(snaky_parse_target_attrib(str->data, attrib_value, sizeof(attrib_value), attrib_name, &start_pos, NULL))
+	{
+		edit_pos = (char*) start_pos;
+		// curr_len is equal to length of the found attribute value
+		curr_len = strlen(attrib_value);
+		attrib_found = true;
+	}
+
+	// see if current value is a bool and user passed "OPPOSITE"
+	if(strcmp(new_attrib_value, "OPPOSITE") == 0)
+	{
+		if(strcmp(attrib_value, "TRUE") == 0)
+			new_attrib_value = "FALSE";
+		else if(strcmp(attrib_value, "ON") == 0)
+			new_attrib_value = "OFF";
+		else if(strcmp(attrib_value, "FALSE") == 0)
+			new_attrib_value = "TRUE";
+		else if(strcmp(attrib_value, "OFF") == 0)
+			new_attrib_value = "ON";
+		else
+		{
+			vl_log(VL_ERROR, "The 'OPPOSITE' attrib value can only be used on boolean attributes!\n");
+			return 0;
+		}
+	}
+
+	// if the attrib wasn't found, it must be added
+	size_t new_len = 0;
+	if(attrib_found)
+	{
+		new_len = strlen(new_attrib_value);
+
+		if(new_len > curr_len)
+		{
+			size_t new_total_len = str->len + (new_len - curr_len);
+			if(new_total_len + 1 > str->size && !snaky_realloc_str(str, new_total_len + 1))
+				return 0;
+		}
+	}
+	else
+	{
+		new_len = strlen(attrib_name) + strlen(new_attrib_value) + 3;
+
+		size_t new_total_len = str->len + new_len;
+
+		if(new_total_len + 1 > str->size && !snaky_realloc_str(str, new_total_len + 1))
+			return 0;
+	}
+
+	buf = str->data;
+
+	if(!attrib_found)
+	{
+		// add ',attrib_name=new_attrib_value' to string:
+
+		// walk forward in string until the next '>' is hit
+		while(*buf && *buf != '>')
+		{
+			// see if an object should be skipped
+			if(*buf == GROUP_OPENING)
+			{
+				const char *end_of_group = find_end_of_group(buf);
+				if(!end_of_group)
+				{
+					vl_log(VL_ERROR, "Group was never closed in string: '%s'!\n", buf);
+					return 0;
+				}
+				
+				// jump to end of group
+				buf = (char*) end_of_group;
+				buf++;
+				break;
+			}
+
+			buf++;
+		}
+
+		// insert ', ' there
+		insert_char_buf(buf++, ',');
+		insert_char_buf(buf++, ' ');
+
+		// now insert attrib name
+		for(size_t i = 0; i < strlen(attrib_name); ++i)
+			insert_char_buf(buf++, *(attrib_name + i));
+
+		// now insert the '='
+		insert_char_buf(buf++, '=');
+
+		// now insert the new attrib value
+		for(size_t i = 0; i < strlen(new_attrib_value); ++i)
+			insert_char_buf(buf++, *(new_attrib_value + i));
+	}
+	else
+	{
+		// modify attrib value directly within string:
+
+		size_t new_len = strlen(new_attrib_value);
+
+		// first shift everything occupying that space to the right
+		memmove(edit_pos + new_len, edit_pos + curr_len, strlen(edit_pos + curr_len) + 1);
+
+		// then copy the new attrib value into the new space
+		memcpy(edit_pos, new_attrib_value, new_len);
+	}
+
+	// re-calculate string length
+	str->len = strlen(str->data);
 
 	return 1;
 }
@@ -971,14 +1350,12 @@ bool snaky_parse_bool(const char *str, int *out_success)
 
 static char peek_next_char(const char **str)
 {
-	while(**str && **str == ' ')
-		(*str)++;
+	skip_whitespace(str);
 	return **str;
 }
 static char get_next_char(const char **str)
 {
-	while(**str && **str == ' ')
-		(*str)++;
+	skip_whitespace(str);
 	return *(*str)++;
 }
 static float parse_term(const char*, const char**, int*);
@@ -1383,7 +1760,6 @@ void snaky_parse_target_attrib_value(const char *str, const char *attrib_name, s
 		snaky_parse_value(str, attrib, resolved_type, out_value, out_success);
 	}
 
-	// TODO should these functions emit these error messages? or leave that up to the user?
 	if(*out_success == 0)
 		vl_log(VL_ERROR, "Failed to parse target attrib value: string: '%s', attribute name: '%s'!\n", str, attrib_name);
 }
@@ -1488,13 +1864,13 @@ int snaky_read_file(const char *file_path, char *buffer, size_t buffer_size)
 	// make sure buffer is valid:
 	*buffer = '\0';
 
-	char read[SNAKY_MAX_LINE_LEN];
+	char read[SNAKY_MAX_LINE_LEN + 1];
 	size_t total_size = 0;
 	while(fgets(read, sizeof(read), f))
 	{
 		total_size += strlen(read);
 
-		if(total_size >= buffer_size)
+		if(total_size + 1 > buffer_size)
 		{
 			vl_log(VL_ERROR, "Not enough memory allocated for reading file's contents: '%s'!\n", file_path);
 			return 0;
@@ -1502,6 +1878,43 @@ int snaky_read_file(const char *file_path, char *buffer, size_t buffer_size)
 
 		// append contents to user's buffer
 		if(!strcat(buffer, read))
+		{
+			vl_log(VL_ERROR, "Failed to append strings while reading file's contents: '%s'!\n", file_path);
+			return 0;
+		}
+	}
+
+	fclose(f);
+
+	return 1;
+}
+int snaky_read_file_str(const char *file_path, snaky_string *str)
+{
+	if(!file_path || !str)
+		return 0;
+
+	FILE *f = fopen(file_path, "r");
+	if(!f)
+	{
+		vl_log(VL_ERROR, "Failed to open file at path: '%s'!\n", file_path);
+		return 0;
+	}
+
+	// make sure string is valid:
+	char *buf = str->data;
+	*buf = '\0';
+
+	char read[SNAKY_MAX_LINE_LEN + 1];
+	size_t total_size = 0;
+	while(fgets(read, sizeof(read), f))
+	{
+		total_size += strlen(read);
+
+		if(total_size + 1 > str->size && !snaky_realloc_str(str, str->size + strlen(read)))
+			return 0;
+
+		// append contents to string
+		if(!strcat(str->data, read))
 		{
 			vl_log(VL_ERROR, "Failed to append strings while reading file's contents: '%s'!\n", file_path);
 			return 0;
@@ -1554,7 +1967,7 @@ int snaky_define_constant(const char *str, float value)
 {
 	if(!init)
 	{
-		vl_log(VL_ERROR, "Cannot define a constant without initializing SnakyScript!\n");
+		vl_log(VL_ERROR, "Cannot define a constant without initializing SnakyAttributeLists!\n");
 		return 0;
 	}
 

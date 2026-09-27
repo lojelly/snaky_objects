@@ -1,0 +1,6 @@
+<
+	player=
+	{
+		< name=Logan, hp : float = MAX_HP, max_hp : float = MAX_HP>
+	}
+>

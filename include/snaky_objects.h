@@ -20,26 +20,26 @@
 
 /**
   Define SNAKY_CUSTOM_BUF_SIZE to change
-  the default buffer size of SnakyScript.
+  the default buffer size in snaky_objects.
 */
 #ifdef SNAKY_CUSTOM_BUF_SIZE
 	#define SNAKY_BUF_SIZE SNAKY_CUSTOM_BUF_SIZE
 #else
 	/**
-	  The default buffer size of SnakyScript.
+	  The default buffer size in snaky_objects.
 	*/
 	#define SNAKY_BUF_SIZE 64
 #endif
 
 /**
   Define SNAKY_CUSTOM_MAX_LINE_LEN to change the
-  default maximum line length of SnakyScript files.
+  default maximum line length of snaky_objects files.
 */
 #ifdef SNAKY_CUSTOM_MAX_LINE_LEN
 	#define SNAKY_MAX_LINE_LEN SNAKY_CUSTOM_MAX_LINE_LEN
 #else
 	/**
-	  The default maximum line length in a SnakyScript file.
+	  The default maximum line length in a snaky_objects file.
 	*/
 	#define SNAKY_MAX_LINE_LEN 256
 #endif
@@ -73,14 +73,14 @@ typedef struct snaky_attrib_data
 } snaky_attrib_data;
 
 /**
-  Represents any kind of invalid value within SnakyScript.
+  Represents any kind of invalid value within snaky_objects.
 */
 #define SNAKY_INVALID_VALUE -1
 
 /**
-  The different data types in SnakyScript.
+  The different data types in snaky_objects.
 
-  @note SnakyScript does not use pointers or strings
+  @note snaky_objects does not use pointers or strings
   as data types. This means that custom expression
   functions should always return a numerical, character,
   or boolean result.
@@ -110,7 +110,35 @@ typedef enum snaky_data_type
 } snaky_data_type;
 
 /**
-  Initializes the SnakyScript library.
+  Contains string data.
+
+  snaky_strings are primarily
+  used for automatic-memory-allocation
+  functions within snaky_objects.
+  Automatic-memory-allocation functions
+  use snaky_strings to automatically
+  resize char arrays when necessary.
+  These functions are suffixed with 'str.'
+*/
+typedef struct snaky_string
+{
+	/**
+	  The char array.
+	*/
+	char *data;
+	/**
+	  The current amount of bytes
+	  allocated for the string.
+	*/
+	size_t size;
+	/**
+	  The actual length of the string.
+	*/
+	size_t len;
+} snaky_string;
+
+/**
+  Initializes the snaky_objects library.
 
   @important Make sure you call snaky_shutdown()
   later!
@@ -119,16 +147,69 @@ typedef enum snaky_data_type
 */
 SNAKY_API int snaky_init(void);
 /**
-  Determines if SnakyScript has been initialized.
+  Determines if the snaky_objects library has been initialized.
 */
 SNAKY_API bool snaky_is_init(void);
 /**
   Shuts down and frees any memory allocated
-  by SnakyScript.
+  by snaky_objects.
 
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_shutdown(void);
+
+/**
+  Creates and initializes a snaky_string
+  using a string literal or char buffer.
+
+  @important This function duplicates
+  the 'data' array given and uses
+  that for the snaky_string's 'data'
+  field. Because of this, you must
+  free the string later with
+  snaky_free_str(...).
+
+  @return 1 on success, 0 on failure.
+
+  @see snaky_free_str(snaky_string*)
+*/
+SNAKY_API int snaky_create_str(snaky_string *str, char *data);
+/**
+  Creates and initializes a snaky_string
+  using a specified amount of bytes to allocate.
+
+  @important You must free the string with snaky_free_str(...)
+  later!
+
+  @note Use snaky_strcpy(...) to populate the char array on the
+  snaky_string!
+
+  @return 1 on success, 0 on failure.
+
+  @see snaky_free_str(snaky_string*)
+  @see snaky_strcpy(snaky_string*, const char*)
+*/
+SNAKY_API int snaky_prepare_str(snaky_string *str, size_t bytes);
+/**
+  Frees all memory associated with the given snaky_string.
+*/
+SNAKY_API void snaky_free_str(snaky_string *str);
+/**
+  Copies a char array's data into a snaky_string's 'data' field.
+
+  @note This function automatically allocates more memory
+  if it is necessary. You will still have to use snaky_free_str(...)
+  later on the snaky_string.
+
+  @return 1 on success, 0 on failure.
+*/
+SNAKY_API int snaky_strcpy(snaky_string *dest, const char *src);
+/**
+  Reallocates memory for a snaky_string based on a new size in bytes.
+
+  @return 1 on success, 0 on failure.
+*/
+SNAKY_API int snaky_realloc_str(snaky_string *str, size_t bytes);
 
 /**
   Searches the given string for a specific attribute and tries to parse its value.
@@ -214,6 +295,12 @@ SNAKY_API int snaky_parse_attrib(const char *str, char *name_buffer, size_t name
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_remove_attrib(char *str, const char *attrib_name);
+/**
+  Same as snaky_remove_attrib(...) but uses a snaky_string instead.
+
+  @see snaky_remove_attrib(char*, const char*)
+*/
+SNAKY_API int snaky_remove_attrib_str(snaky_string *str, const char *attrib_name);
 
 /**
   Appends an attribute to the given string.
@@ -224,6 +311,12 @@ SNAKY_API int snaky_remove_attrib(char *str, const char *attrib_name);
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_add_attrib(char *str, size_t buffer_size, const char *attrib_name, const char *new_attrib_value);
+/**
+  Same as snaky_add_attrib(...) but uses a snaky_string instead.
+
+  @see snaky_add_attrib(char*, size_t, const char*, const char*)
+*/
+SNAKY_API int snaky_add_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value);
 
 /**
   Modifies an attribute value directly in a string.
@@ -231,6 +324,12 @@ SNAKY_API int snaky_add_attrib(char *str, size_t buffer_size, const char *attrib
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, const char *new_attrib_value);
+/**
+  Same as snaky_set_attrib(...) but uses a snaky_string instead.
+
+  @see snaky_set_attrib(char*, size_t, const char*, const char*)
+*/
+SNAKY_API int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value);
 /**
   Modifies multiple attribute values directly in a string.
 
@@ -410,7 +509,7 @@ SNAKY_API int snaky_destroy_object_template(const char *name);
 SNAKY_API int snaky_create_object(const char *name, char *buffer, size_t buffer_size);
 
 /**
-  Opens a file for reading SnakyScript from.
+  Opens a file for reading attribute lists from.
 
   @param file_path The file path.
   @param buffer Where the file's contents should be placed.
@@ -419,6 +518,16 @@ SNAKY_API int snaky_create_object(const char *name, char *buffer, size_t buffer_
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_read_file(const char *file_path, char *buffer, size_t buffer_size);
+/**
+  Same as snaky_read_file(...)
+  but uses a snaky_string instead.
+
+  @important If no extension is provided for the file,
+  the 'snakyobjs' extension is assumed.
+
+  @see snaky_read_file(const char*, char*, size_t)
+*/
+SNAKY_API int snaky_read_file_str(const char *file_path, snaky_string *str);
 /**
   Obtains the size of a file in bytes.
 */
