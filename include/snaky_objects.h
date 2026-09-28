@@ -303,29 +303,19 @@ SNAKY_API int snaky_remove_attrib(char *str, const char *attrib_name);
 SNAKY_API int snaky_remove_attrib_str(snaky_string *str, const char *attrib_name);
 
 /**
-  Appends an attribute to the given string.
-
-  If the attribute already exists in the string,
-  its value will be modified instead.
-
-  @return 1 on success, 0 on failure.
-*/
-SNAKY_API int snaky_add_attrib(char *str, size_t buffer_size, const char *attrib_name, const char *new_attrib_value);
-/**
-  Same as snaky_add_attrib(...) but uses a snaky_string instead.
-
-  @see snaky_add_attrib(char*, size_t, const char*, const char*)
-*/
-SNAKY_API int snaky_add_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value);
-
-/**
   Modifies an attribute value directly in a string.
+
+  If the attribute is not found, it is automatically
+  appended to the buffer, if possible.
 
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, const char *new_attrib_value);
 /**
   Same as snaky_set_attrib(...) but uses a snaky_string instead.
+
+  If the attribute is not found, it is automatically
+  appended to the string, if possible.
 
   @see snaky_set_attrib(char*, size_t, const char*, const char*)
 */
@@ -359,15 +349,22 @@ SNAKY_API size_t snaky_count_attribs(const char *str);
 /**
   Obtains all the data within an attribute string.
 
-  @important Do not initialize the attribute data map.
-  This function automatically initializes it and populates
-  it with the necessary data. Later, you must use
-  dynmaps_free_strkeyval(...) on the map to free its allocated
-  memory.
+  @note If the map has to be initialized, the function
+  automatically does it for you.
 
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_get_attrib_data(const char *str, snaky_attrib_data *data);
+/**
+  Obtains all the data within an attribute string,
+  using a snaky_string.
+
+  @note If the map has to be initialized, the function
+  automatically does it for you.
+
+  @see snaky_get_attrib_data(const char*, snaky_attrib_data*)
+*/
+SNAKY_API int snaky_get_attrib_data_str(const snaky_string *str, snaky_attrib_data *data);
 
 /**
   Reads a character attribute value and obtains the actual
@@ -470,44 +467,13 @@ SNAKY_API void snaky_parse_value(const char *origin, const char *str, snaky_data
 SNAKY_API void snaky_parse_target_attrib_value(const char *str, const char *attrib_name, snaky_data_type target_type, void *out_value, const char **out_start_pos, int *out_success);
 
 /**
-  Creates an object template.
-
-  Object templates allow for attribute strings to be easily copied
-  and re-implemented for future instances.
-
-  @param name The name of the object template.
-  @param str The string to use as the template.
-  @param size The size of the string in bytes.
-
-  @return 1 on success, 0 on failure.
+  Determines if a file exists.
 */
-SNAKY_API int snaky_create_object_template(const char *name, const char *str, size_t size);
+SNAKY_API bool snaky_file_exists(const char *file_path);
 /**
-  Destroys and removes an object template.
-
-  @important You must call this for every object template you create.
-  When the last object template is destroyed, the internal memory
-  associated with object templates is freed.
-
-  @param name The name of the object template to destroy.
-
-  @return 1 on success, 0 on failure.
+  Obtains the size of a file in bytes.
 */
-SNAKY_API int snaky_destroy_object_template(const char *name);
-/**
-  Creates an instance of an object template using the
-  name of an existing object template.
-
-  @param name The name of the object template to create an instance of.
-  @param buffer Where to put the cloned string.
-  @param buffer_size The size of 'buffer' in bytes.
-
-  @see snaky_create_object_template(const char*, const char*, size_t)
-
-  @return 1 on success, 0 on failure.
-*/
-SNAKY_API int snaky_create_object(const char *name, char *buffer, size_t buffer_size);
-
+SNAKY_API long snaky_get_file_size(const char *file_path);
 /**
   Opens a file for reading attribute lists from.
 
@@ -529,9 +495,26 @@ SNAKY_API int snaky_read_file(const char *file_path, char *buffer, size_t buffer
 */
 SNAKY_API int snaky_read_file_str(const char *file_path, snaky_string *str);
 /**
-  Obtains the size of a file in bytes.
+  Reads a file's contents and inserts it all into
+  a snaky_attrib_data map.
+
+  @note If the map needs to be initialized, the function
+  automatically does it for you.
+
+  @return 1 on success, 0 on failure.
+
+  @see snaky_attrib_data
 */
-SNAKY_API long snaky_get_file_size(const char *file_path);
+SNAKY_API int snaky_read_file_data(const char *file_path, snaky_attrib_data *data);
+/**
+  Opens a file and writes an attribute list to it.
+
+  @param file_path The file path.
+  @param data The attribute data to write
+
+  @return 1 on success, 0 on failure.
+*/
+SNAKY_API int snaky_write_file(const char *file_path, snaky_attrib_data *data);
 /**
   Obtains the next line in a buffer that contains the lines from
   a read file.

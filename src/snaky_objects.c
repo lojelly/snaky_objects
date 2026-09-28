@@ -257,8 +257,8 @@ static const char *find_end_of_group(const char *start)
 
 			// when the depth matches the starting depth, the end of the group is found
 			if(depth == 0)
-				// p will point to the matching closing character
-				return p;
+				// p will point to char directly after the matching closing character
+				return p + 1;
 		}
 	}
 
@@ -327,7 +327,8 @@ static int resolve_data_type(const char **attribs_start, snaky_data_type *out_da
 				vl_log(VL_ERROR, "Unknown data type: '%s'!\n", *attribs_start);
 				return 0;
 			}
-			continue;
+
+			return 1;
 		}
 
 		(*attribs_start)++;
@@ -381,9 +382,6 @@ static int parse_target_attrib(const char *attribs_start, char *buffer, size_t b
 			vl_log(VL_ERROR, "Group was never closed in string: '%s'!\n", start_of_group);
 			return 0;
 		}
-
-		// skip the indicator
-		attribs_start++;
 
 		size_t i = 0;
 		while(buffer && buffer_size > 0 && *attribs_start && attribs_start != end_of_group && i + 1 < buffer_size)
@@ -475,9 +473,6 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 				return 0;
 			}
 
-			// skip the indicator
-			p++;
-
 			// if user included a '.' to find a nested attribute, search for that attribute now:
 			if(last_nested_attrib_pos > 0)
 			{
@@ -559,9 +554,6 @@ int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size,
 }
 static int parse_attrib(const char *attribs_start, char *name_buffer, size_t name_buffer_size, char *value_buffer, size_t value_buffer_size, const char **out_start_pos, snaky_data_type *out_data_type)
 {
-	if(!resolve_data_type(&attribs_start, out_data_type))
-		return 0;
-
 	// 'attribs_start' points to the first char in the attrib name
 	size_t i = 0;
 	skip_whitespace(&attribs_start);
@@ -569,6 +561,9 @@ static int parse_attrib(const char *attribs_start, char *name_buffer, size_t nam
 		name_buffer[i++] = *attribs_start++;
 
 	name_buffer[i] = '\0';
+
+	if(!resolve_data_type(&attribs_start, out_data_type))
+		return 0;
 
 	// find the '=' for this attrib name
 	while(*attribs_start && *attribs_start != '=')
@@ -615,9 +610,6 @@ static int parse_attrib(const char *attribs_start, char *name_buffer, size_t nam
 			vl_log(VL_ERROR, "Group was never closed in string: '%s'!\n", start_of_group);
 			return 0;
 		}
-
-		// skip the first indicator
-		attribs_start++;
 
 		// copy everything in the string exactly as is
 		i = 0;
@@ -667,9 +659,6 @@ int snaky_parse_attrib(const char *str, char *name_buffer, size_t name_buffer_si
 				vl_log(VL_ERROR, "Group was never closed in string: '%s'!\n", start_of_group);
 				return 0;
 			}
-
-			// skip the indicator
-			p++;
 
 			while(*p && p != end_of_group)
 				++p;
@@ -820,175 +809,6 @@ int snaky_remove_attrib_str(snaky_string *str, const char *attrib_name)
 	return 1;
 }
 
-int snaky_add_attrib(char *str, size_t buffer_size, const char *attrib_name, const char *new_attrib_value)
-{
-	if(!str || strlen(str) == 0 || buffer_size == 0 || strlen(str) >= buffer_size || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
-		return 0;
-
-	// see if the attrib is already present in the string
-	char attrib_value[SNAKY_BUF_SIZE + 1];
-	if(snaky_parse_target_attrib(str, attrib_value, sizeof(attrib_value), attrib_name, NULL, NULL))
-		// if so, just edit the attribute value in the string
-		return snaky_set_attrib(str, buffer_size, attrib_name, new_attrib_value);
-
-	/*
-	   otherwise, go to end of attrib list and append the new attribute:
-
-	   the end of the attrib list should look like this:
-
-	   '...attrib_name=attrib_value>'
-	*/
-
-	// go to the next '>' found
-	while(*str && *str != '>')
-		str++;
-
-	if(*str != '>')
-	{
-		vl_log(VL_ERROR, "Expected '>' to terminate attribute string: '%s'!\n", str);
-		return 0;
-	}
-
-	/*
-	   if string already contains at least one arg, append ',' to start another arg
-
-	   if the user passes something like "<>" then the '>' is replaced with '\0' and
-	   the new attrib is appended like normal
-	*/
-	if(snaky_count_attribs(str) > 0)
-	{
-		*str = ',';
-		*++str = '\0';
-	}
-	else
-		*str = '\0';
-
-	// append ',attrib_name=new_attrib_value' directly at end
-	size_t i = 0;
-	while(i < strlen(attrib_name) && strlen(str) < buffer_size)
-	{
-		// immediately append the next char in attrib_name
-		*str++ = *(attrib_name + (i++));
-		// to make strlen(...) work the string must be null-terminated
-		*str = '\0';
-	}
-
-	// append the '='
-	if(strlen(str) < buffer_size)
-		*str++ = '=';
-	else
-		return 0;
-
-	i = 0;
-	while(i < strlen(new_attrib_value) && strlen(str) < buffer_size)
-	{
-		// append the next char in new_attrib_value
-		*str++ = *(new_attrib_value + (i++));
-		// to make strlen(...) work the string must be null-terminated
-		*str = '\0';
-	}
-
-	// close the attribute string
-	if(strlen(str) < buffer_size)
-	{
-		*str++ = '>';
-		*str = '\0';
-	}
-	else
-		return 0;
-
-	return 1;
-}
-int snaky_add_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value)
-{
-	if(!str || strlen(str->data) == 0 || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
-		return 0;
-
-	// create local pointer copy so that 'data' is not moved
-	char *buf = str->data;
-
-	// see if the attrib is already present in the string
-	char attrib_value[SNAKY_BUF_SIZE + 1];
-	if(snaky_parse_target_attrib(buf, attrib_value, sizeof(attrib_value), attrib_name, NULL, NULL))
-		// if so, just edit the attribute value in the string
-		return snaky_set_attrib_str(str, attrib_name, new_attrib_value);
-
-	/*
-	   otherwise, go to end of attrib list and append the new attribute:
-
-	   the end of the attrib list should look like this:
-
-	   '...attrib_name=attrib_value>'
-	*/
-
-	// go to the next '>' found
-	while(*buf && *buf != '>')
-		buf++;
-
-	if(*buf != '>')
-	{
-		vl_log(VL_ERROR, "Expected '>' to terminate attribute string: '%s'!\n", str->data);
-		return 0;
-	}
-
-	/*
-	   if string already contains at least one arg, append ',' to start another arg
-
-	   if the user passes something like "<>" then the '>' is replaced with '\0' and
-	   the new attrib is appended like normal
-	   */
-	if(snaky_count_attribs(str->data) > 0)
-	{
-		*buf = ',';
-		*++buf = '\0';
-	}
-	else
-		*buf = '\0';
-
-	// append ',attrib_name=new_attrib_value' directly at end
-	size_t i = 0;
-	while(i < strlen(attrib_name) && str->len + 1 < str->size)
-	{
-		// immediately append the next char in attrib_name
-		*buf++ = *(attrib_name + (i++));
-		// to make strlen(...) work the string must be null-terminated
-		*buf = '\0';
-		str->len = strlen(str->data);
-	}
-
-	// append the '='
-	if(str->len < str->size)
-	{
-		*buf++ = '=';
-		*buf = '\0';
-		str->len = strlen(str->data);
-	}
-	else
-		return 0;
-
-	i = 0;
-	while(i < strlen(new_attrib_value) && str->len < str->size)
-	{
-		// append the next char in new_attrib_value
-		*buf++ = *(new_attrib_value + (i++));
-		// to make strlen(...) work the string must be null-terminated
-		*buf = '\0';
-		str->len = strlen(str->data);
-	}
-
-	// close the attribute string
-	if(str->len < str->size)
-	{
-		*buf++ = '>';
-		*buf = '\0';
-		str->len = strlen(str->data);
-	}
-	else
-		return 0;
-
-	return 1;
-}
-
 static void insert_char_buf(char *buffer, char c)
 {
 	// move all chars at pos one slot over to the right
@@ -1112,7 +932,7 @@ int snaky_set_attrib(char *str, size_t buffer_size, const char *attrib_name, con
 }
 int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, const char *new_attrib_value)
 {
-	if(!str || strlen(str->data) == 0 || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
+	if(!str || !attrib_name || strlen(attrib_name) == 0 || !new_attrib_value || strlen(new_attrib_value) == 0)
 		return 0;
 
 	// copy of str->data pointer
@@ -1201,9 +1021,21 @@ int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, const char 
 			buf++;
 		}
 
-		// insert ', ' there
-		insert_char_buf(buf++, ',');
-		insert_char_buf(buf++, ' ');
+		// get number of present attribs:
+		bool empty = str->len == 0;
+		size_t num_attribs = snaky_count_attribs(str->data);
+
+		// insert ', ' there if at least one attrib is already present
+		if(!empty && num_attribs == 0)
+		{
+			insert_char_buf(buf++, ',');
+			insert_char_buf(buf++, ' ');
+		}
+		// if no attribs are present, insert '<' and keep track of this so later the '>' can be inserted too
+		else if(empty)
+		{
+			insert_char_buf(buf++, '<');
+		}
 
 		// now insert attrib name
 		for(size_t i = 0; i < strlen(attrib_name); ++i)
@@ -1215,6 +1047,10 @@ int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, const char 
 		// now insert the new attrib value
 		for(size_t i = 0; i < strlen(new_attrib_value); ++i)
 			insert_char_buf(buf++, *(new_attrib_value + i));
+
+		// close attrib string if necessary
+		if(empty && num_attribs == 0)
+			insert_char_buf(buf++, '>');
 	}
 	else
 	{
@@ -1288,15 +1124,20 @@ int snaky_get_attrib_data(const char *str, snaky_attrib_data *data)
 	if(!str || strlen(str) == 0 || !data)
 		return 0;
 
-	// init map
-	dynmaps_init(data);
-	if(data->alloc_failure)
-		return 0;
+	// init map if necessary
+	if(data->size == 0 && data->capacity == 0)
+	{
+		dynmaps_init(data);
+		if(data->alloc_failure)
+		{
+			vl_log(VL_ERROR, "Failed to initialize snaky_attrib_data map in snaky_get_attrib_data!\n");
+			return 0;
+		}
+	}
 
 	const char *start_pos = str;
 	char name[SNAKY_BUF_SIZE + 1];
 	char value[SNAKY_BUF_SIZE + 1];
-
 	while(snaky_parse_attrib(start_pos, name, sizeof(name), value, sizeof(value), &start_pos, NULL))
 	{
 		dynmaps_set_strkeyval(data, name, value);
@@ -1304,7 +1145,16 @@ int snaky_get_attrib_data(const char *str, snaky_attrib_data *data)
 			return 0;
 	}
 
+	if(data->size == 0)
+		return 0;
+
 	return 1;
+}
+int snaky_get_attrib_data_str(const snaky_string *str, snaky_attrib_data *data)
+{
+	if(!str || !data)
+		return 0;
+	return snaky_get_attrib_data(str->data, data);
 }
 
 char snaky_parse_char(const char *str, int *out_success)
@@ -1764,97 +1614,43 @@ void snaky_parse_target_attrib_value(const char *str, const char *attrib_name, s
 		vl_log(VL_ERROR, "Failed to parse target attrib value: string: '%s', attribute name: '%s'!\n", str, attrib_name);
 }
 
-// storage of object templates:
-typedef struct obj_template
+bool snaky_file_exists(const char *file_path)
 {
-	char str[512];
-	char name[64];
-	size_t size;
-} obj_template;
-typedef struct obj_template_map
-{
-	char **keys;
-	obj_template *values;
-	size_t size, capacity;
-	bool alloc_failure;
-} obj_template_map;
+	FILE *f = fopen(file_path, "rb");
 
-static obj_template_map obj_templates = {0};
+	bool e = f != NULL;
 
-int snaky_create_object_template(const char *name, const char *str, size_t size)
+	if(f)
+		fclose(f);
+
+	return e;
+}
+long snaky_get_file_size(const char *file_path)
 {
-	// see if the map needs to be initialized
-	if(obj_templates.size == 0)
+	if(!file_path || strlen(file_path) == 0)
+		return 0;
+
+	FILE *f = fopen(file_path, "rb");
+	if(!f)
 	{
-		dynmaps_init(&obj_templates);
-		if(obj_templates.alloc_failure)
-		{
-			vl_log(VL_ERROR, "Failed to create object template map!\n");
-			return 0;
-		}
-	}
-
-	// create template
-	obj_template temp = {0};
-	snprintf(temp.name, sizeof(temp.name), "%s", name);
-	snprintf(temp.str, sizeof(temp.str), "%s", str);
-	temp.size = size;
-
-	// save template info in map
-	dynmaps_set_strkey(&obj_templates, name, temp);
-	if(obj_templates.alloc_failure)
-	{
-		vl_log(VL_ERROR, "Failed to allocate memory for object template!\n");
+		vl_log(VL_ERROR, "Failed to open file at '%s'!\n", file_path);
 		return 0;
 	}
 
-	vl_log(VL_SUCCESS, "Object template successfully created: '%s'!\n", name);
-	return 1;
+	fseek(f, 0, SEEK_END);
+
+	long bytes = ftell(f);
+
+	fclose(f);
+
+	return bytes;
 }
-int snaky_destroy_object_template(const char *name)
-{
-	int result = -1;
-	dynmaps_remove_strkey_result(&obj_templates, name, result);
-
-	if(result == -1)
-	{
-		vl_log(VL_ERROR, "No object template exists with the name '%s'!\n", name);
-		return 0;
-	}
-
-	vl_log(VL_SUCCESS, "Object template '%s' successfully destroyed!\n", name);
-
-	// free the entire map if the number of objects is 0
-	if(obj_templates.size == 0)
-	{
-		vl_log(VL_INFO, "No more object templates exist; freeing all associated memory now!\n");
-		dynmaps_free_strkey(&obj_templates);
-	}
-
-	return 1;
-}
-int snaky_create_object(const char *name, char *buffer, size_t buffer_size)
-{
-	// try to find an object template with the given name
-	obj_template *temp = NULL;
-	dynmaps_get_strkey(&obj_templates, name, temp);
-
-	if(temp)
-	{
-		snprintf(buffer, buffer_size, "%s", temp->str);
-		return 1;
-	}
-
-	vl_log(VL_ERROR, "Failed to create object instance from object template: '%s'!\n", name);
-	return 0;
-}
-
 int snaky_read_file(const char *file_path, char *buffer, size_t buffer_size)
 {
 	if(!file_path || strlen(file_path) == 0 || !buffer || buffer_size == 0)
 		return 0;
 
-	FILE *f = fopen(file_path, "r");
+	FILE *f = fopen(file_path, "rb");
 	if(!f)
 	{
 		vl_log(VL_ERROR, "Failed to open file at path: '%s'!\n", file_path);
@@ -1893,7 +1689,7 @@ int snaky_read_file_str(const char *file_path, snaky_string *str)
 	if(!file_path || !str)
 		return 0;
 
-	FILE *f = fopen(file_path, "r");
+	FILE *f = fopen(file_path, "rb");
 	if(!f)
 	{
 		vl_log(VL_ERROR, "Failed to open file at path: '%s'!\n", file_path);
@@ -1925,25 +1721,126 @@ int snaky_read_file_str(const char *file_path, snaky_string *str)
 
 	return 1;
 }
-long snaky_get_file_size(const char *file_path)
+int snaky_read_file_data(const char *file_path, snaky_attrib_data *data)
 {
-	if(!file_path || strlen(file_path) == 0)
-		return 0;
+	// determine if map should be initialized
+	if(data->size == 0 && data->capacity == 0)
+	{
+		dynmaps_init(data);
+		if(data->alloc_failure)
+		{
+			vl_log(VL_ERROR, "Failed to initialize snaky_attrib_data map in snaky_read_file_data!\n");
+			return 0;
+		}
+	}
 
-	FILE *f = fopen(file_path, "r");
+	FILE *f = fopen(file_path, "rb");
 	if(!f)
 	{
-		vl_log(VL_ERROR, "Failed to open file at '%s'!\n", file_path);
+		vl_log(VL_ERROR, "Failed to open file at path: '%s'!\n", file_path);
 		return 0;
 	}
 
-	fseek(f, 0, SEEK_END);
+	// first read the number of entries in the map:
+	size_t size = 0;
+	if(fread(&size, sizeof(size_t), 1, f) != 1)
+		goto snaky_read_file_err;
 
-	long bytes = ftell(f);
+	// now read each key in the map:
+	for(size_t i = 0; i < size; ++i)
+	{
+		size_t key_len = 0;
+		if(fread(&key_len, sizeof(size_t), 1, f) != 1)
+			goto snaky_read_file_err;
 
+		char key[key_len + 1];
+		if(fread(key, sizeof(char), key_len, f) != key_len)
+			goto snaky_read_file_err;
+
+		// insert '\0' into k
+		key[key_len] = '\0';
+
+		size_t val_len = 0;
+		if(fread(&val_len, sizeof(size_t), 1, f) != 1)
+			goto snaky_read_file_err;
+
+		char val[val_len + 1];
+		if(fread(val, sizeof(char), val_len, f) != val_len)
+			goto snaky_read_file_err;
+
+		// insert '\0' into v
+		val[val_len] = '\0';
+
+		// copy string into map
+		dynmaps_set_strkeyval(data, key, val);
+	}
+
+	// if no errors, skip to success:
+	goto snaky_read_file_success;
+
+	snaky_read_file_err:
+	vl_log(VL_ERROR, "Failed to read attribute data from file: '%s'!\n", file_path);
 	fclose(f);
+	return 0;
 
-	return bytes;
+	snaky_read_file_success:
+	vl_log(VL_SUCCESS, "Attribute data read from file: '%s'!\n", file_path);
+	fclose(f);
+	return 1;
+}
+int snaky_write_file(const char *file_path, snaky_attrib_data *data)
+{
+	if(!file_path || !data || data->size == 0 || data->alloc_failure)
+		return 0;
+
+	FILE *f = fopen(file_path, "wb");
+	if(!f)
+	{
+		vl_log(VL_ERROR, "Failed to open file at path: '%s'!\n", file_path);
+		return 0;
+	}
+
+	// write each part of the data to the file:
+
+	// first, the number of entries in the map:
+	if(fwrite(&data->size, sizeof(data->size), 1, f) != 1)
+		goto snaky_write_file_err;
+
+	// now write each key in the map:
+	for(size_t i = 0; i < data->size; ++i)
+	{
+		size_t key_len = strlen(data->keys[i]);
+		size_t val_len = strlen(data->values[i]);
+
+		// write length of key
+		if(fwrite(&key_len, sizeof(size_t), 1, f) != 1)
+			goto snaky_write_file_err;
+
+		// write key contents
+		if(fwrite(data->keys[i], sizeof(char), key_len, f) != key_len)
+			goto snaky_write_file_err;
+
+		// write length of value
+		if(fwrite(&val_len, sizeof(size_t), 1, f) != 1)
+			goto snaky_write_file_err;
+
+		// write value contents
+		if(fwrite(data->values[i], sizeof(char), val_len, f) != val_len)
+			goto snaky_write_file_err;
+	}
+
+	// if no errors, skip to success:
+	goto snaky_write_file_success;
+
+	snaky_write_file_err:
+	vl_log(VL_ERROR, "Failed to write attribute data to file: '%s'!\n", file_path);
+	fclose(f);
+	return 0;
+
+	snaky_write_file_success:
+	vl_log(VL_SUCCESS, "Attribute data written to file: '%s'!\n", file_path);
+	fclose(f);
+	return 1;
 }
 int snaky_get_next_line(char **cursor, char *buffer, size_t buffer_size)
 {
