@@ -5,7 +5,7 @@
 #include <string.h>
 #include "vibrant_logs.h"
 #include "dynamic_map_spellbook.h"
-#include "snaky_objects.h"
+#include "snaky_strings.h"
 
 #define GROUP_OPENING '{'
 #define GROUP_CLOSING '}'

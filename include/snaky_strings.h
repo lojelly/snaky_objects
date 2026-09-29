@@ -20,7 +20,7 @@
 
 /**
   Define SNAKY_CUSTOM_BUF_SIZE to change the default
-  buffer size in snaky_objects.
+  buffer size in snaky_strings.
 
   The default buffer size is 256.
 */
@@ -28,20 +28,20 @@
 	#define SNAKY_BUF_SIZE SNAKY_CUSTOM_BUF_SIZE
 #else
 	/**
-	  The default size of char buffers in snaky_objects.
+	  The default size of char buffers in snaky_strings.
 	*/
 	#define SNAKY_BUF_SIZE 256
 #endif
 
 /**
   Define SNAKY_CUSTOM_MAX_LINE_LEN to change the
-  default maximum line length of snaky_objects files.
+  default maximum line length of snaky_strings files.
 */
 #ifdef SNAKY_CUSTOM_MAX_LINE_LEN
 	#define SNAKY_MAX_LINE_LEN SNAKY_CUSTOM_MAX_LINE_LEN
 #else
 	/**
-	  The default maximum line length in a snaky_objects file.
+	  The default maximum line length in a snaky_strings file.
 	*/
 	#define SNAKY_MAX_LINE_LEN 256
 #endif
@@ -75,14 +75,14 @@ typedef struct snaky_attrib_data
 } snaky_attrib_data;
 
 /**
-  Represents any kind of invalid value within snaky_objects.
+  Represents any kind of invalid value within snaky_strings.
 */
 #define SNAKY_INVALID_VALUE -1
 
 /**
-  The different data types in snaky_objects.
+  The different data types in snaky_strings.
 
-  @note snaky_objects does not use pointers or strings
+  @note snaky_strings does not use pointers or strings
   as data types. This means that custom expression
   functions should always return a numerical, character,
   or boolean result.
@@ -116,7 +116,7 @@ typedef enum snaky_data_type
 
   snaky_strings are primarily
   used for automatic-memory-allocation
-  functions within snaky_objects.
+  functions within snaky_strings.
   Automatic-memory-allocation functions
   use snaky_strings to automatically
   resize char arrays when necessary.
@@ -159,7 +159,7 @@ typedef enum snaky_fwrite_mode
 } snaky_fwrite_mode;
 
 /**
-  Initializes the snaky_objects library.
+  Initializes the snaky_strings library.
 
   @important Make sure you call snaky_shutdown()
   later!
@@ -168,12 +168,12 @@ typedef enum snaky_fwrite_mode
 */
 SNAKY_API int snaky_init(void);
 /**
-  Determines if the snaky_objects library has been initialized.
+  Determines if the snaky_strings library has been initialized.
 */
 SNAKY_API bool snaky_is_init(void);
 /**
   Shuts down and frees any memory allocated
-  by snaky_objects.
+  by snaky_strings.
 
   @return 1 on success, 0 on failure.
 */
