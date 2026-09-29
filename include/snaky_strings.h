@@ -155,7 +155,13 @@ typedef enum snaky_fwrite_mode
 	  Results in plain text being
 	  written to the file.
 	*/
-	SNAKY_FWRITE_TEXT
+	SNAKY_FWRITE_TEXT,
+	/**
+	  Results in non-string values
+	  being written in binary format,
+	  and strings will be encrypted.
+	*/
+	SNAKY_FWRITE_ENCRYPT
 } snaky_fwrite_mode;
 
 /**
@@ -639,3 +645,8 @@ SNAKY_API int snaky_define_eval_function(const char *str, snaky_eval_func func);
   @see snaky_define_eval_function(const char*, snaky_eval_func)
 */
 SNAKY_API int snaky_define_function(const char *str, snaky_data_type return_type, void *fn_ptr);
+
+/**
+  Sets the key used when encrypting strings.
+*/
+SNAKY_API void snaky_set_encryption_key(int k);

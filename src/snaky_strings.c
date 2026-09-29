@@ -66,6 +66,8 @@ static float rads(float f)
 	return f * (M_PI / 180.0f);
 }
 
+static int encrypt_key = INT_MAX % 26;
+
 int snaky_init()
 {
 	if(init)
@@ -2164,6 +2166,36 @@ int snaky_read_file_str(const char *file_path, snaky_string *str)
 
 	return 1;
 }
+
+// encrypt and decrypt a string:
+static void encrypt_str(char *data, size_t len, int key)
+{
+	for(size_t i = 0; i < len; ++i)
+	{
+		char c = data[i];
+
+		if(isupper(c))
+			data[i] = (c - 'A' + key) % 26 + 'A';
+		else if(islower(c))
+			data[i] = (c - 'a' + key) % 26 + 'a';
+		else if(isdigit(c))
+			data[i] = (c - '0' + key) % 10 + '0';
+	}
+}
+static void decrypt_str(char *data, size_t len, int key)
+{
+	for(size_t i = 0; i < len; ++i)
+	{
+		char c = data[i];
+
+		if(isupper(c))
+			data[i] = (c - 'A' - key + 26) % 26 + 'A';
+		else if(islower(c))
+			data[i] = (c - 'a' - key + 26) % 26 + 'a';
+		else if(isdigit(c))
+			data[i] = (c - '0' - key + 10) % 10 + '0';
+	}
+}
 int snaky_read_file_data(const char *file_path, snaky_attrib_data *data, snaky_fwrite_mode mode)
 {
 	// determine if map should be initialized
@@ -2248,6 +2280,43 @@ int snaky_read_file_data(const char *file_path, snaky_attrib_data *data, snaky_f
 
 		goto snaky_read_file_success;
 	}
+	else if(mode == SNAKY_FWRITE_ENCRYPT)
+	{
+		// same as BINARY mode but decrypt strings:
+
+		size_t size = 0;
+		if(fread(&size, sizeof(size_t), 1, f) != 1)
+			goto snaky_read_file_err;
+
+		for(size_t i = 0; i < size; ++i)
+		{
+			size_t key_len = 0;
+			if(fread(&key_len, sizeof(size_t), 1, f) != 1)
+				goto snaky_read_file_err;
+
+			char key[key_len + 1];
+			if(fread(key, sizeof(char), key_len, f) != key_len)
+				goto snaky_read_file_err;
+
+			key[key_len] = '\0';
+
+			decrypt_str(key, key_len, encrypt_key);
+
+			size_t val_len = 0;
+			if(fread(&val_len, sizeof(size_t), 1, f) != 1)
+				goto snaky_read_file_err;
+
+			char val[val_len + 1];
+			if(fread(val, sizeof(char), val_len, f) != val_len)
+				goto snaky_read_file_err;
+
+			val[val_len] = '\0';
+
+			decrypt_str(val, val_len, encrypt_key);
+
+			dynmaps_set_strkeyval(data, key, val);
+		}
+	}
 	else
 		goto snaky_read_file_err;
 
@@ -2326,6 +2395,55 @@ int snaky_write_file(const char *file_path, snaky_attrib_data *data, snaky_fwrit
 				goto snaky_write_file_err;
 			if(fwrite(">", sizeof(char), 1, f) != 1)
 				goto snaky_write_file_err;
+		}
+	}
+	else if(mode == SNAKY_FWRITE_ENCRYPT)
+	{
+		// same as BINARY mode but encrypt strings:
+
+		if(fwrite(&data->size, sizeof(data->size), 1, f) != 1)
+			goto snaky_write_file_err;
+
+		for(size_t i = 0; i < data->size; ++i)
+		{
+			size_t key_len = strlen(data->keys[i]);
+			size_t val_len = strlen(data->values[i]);
+
+			if(fwrite(&key_len, sizeof(size_t), 1, f) != 1)
+				goto snaky_write_file_err;
+
+			char *encrypted_key = calloc(key_len + 1, sizeof(char));
+			if(!encrypted_key)
+				goto snaky_write_file_err;
+			// copy key into encrypted key buffer
+			strcpy(encrypted_key, data->keys[i]);
+
+			encrypt_str(encrypted_key, key_len, encrypt_key);
+			if(fwrite(encrypted_key, sizeof(char), key_len, f) != key_len)
+			{
+				free(encrypted_key);
+				goto snaky_write_file_err;
+			}
+
+			free(encrypted_key);
+
+			if(fwrite(&val_len, sizeof(size_t), 1, f) != 1)
+				goto snaky_write_file_err;
+
+			char *encrypted_value = calloc(val_len + 1, sizeof(char));
+			if(!encrypted_value)
+				goto snaky_write_file_err;
+			// copy value into encrypted value buffer
+			strcpy(encrypted_value, data->values[i]);
+
+			encrypt_str(encrypted_value, val_len, encrypt_key);
+			if(fwrite(encrypted_value, sizeof(char), val_len, f) != val_len)
+			{
+				free(encrypted_value);
+				goto snaky_write_file_err;
+			}
+
+			free(encrypted_value);
 		}
 	}
 	else
@@ -2416,4 +2534,9 @@ int snaky_define_function(const char *str, snaky_data_type return_type, void *fn
 	}
 
 	return 1;
+}
+
+void snaky_set_encryption_key(int k)
+{
+	encrypt_key = k % 26;
 }
