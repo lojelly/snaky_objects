@@ -19,16 +19,18 @@
 #include <string.h>
 
 /**
-  Define SNAKY_CUSTOM_BUF_SIZE to change
-  the default buffer size in snaky_objects.
+  Define SNAKY_CUSTOM_BUF_SIZE to change the default
+  buffer size in snaky_objects.
+
+  The default buffer size is 256.
 */
 #ifdef SNAKY_CUSTOM_BUF_SIZE
 	#define SNAKY_BUF_SIZE SNAKY_CUSTOM_BUF_SIZE
 #else
 	/**
-	  The default buffer size in snaky_objects.
+	  The default size of char buffers in snaky_objects.
 	*/
-	#define SNAKY_BUF_SIZE 64
+	#define SNAKY_BUF_SIZE 256
 #endif
 
 /**
@@ -136,6 +138,25 @@ typedef struct snaky_string
 	*/
 	size_t len;
 } snaky_string;
+
+/**
+  Determines how data should be written to a file.
+*/
+typedef enum snaky_fwrite_mode
+{
+	/**
+	  The default write mode.
+
+	  This results in all data being
+	  written in binary format.
+	*/
+	SNAKY_FWRITE_BINARY,
+	/**
+	  Results in plain text being
+	  written to the file.
+	*/
+	SNAKY_FWRITE_TEXT
+} snaky_fwrite_mode;
 
 /**
   Initializes the snaky_objects library.
@@ -275,6 +296,15 @@ SNAKY_API int snaky_realloc_str(snaky_string *str, size_t bytes);
 */
 SNAKY_API int snaky_parse_target_attrib(const char *str, char *buffer, size_t buffer_size, const char *attrib_name, const char **out_start_pos, snaky_data_type *out_data_type);
 /**
+  Same as snaky_parse_target_attrib(...) but uses a snaky_string instead
+  of a char buffer.
+
+  @return 1 on success, 0 on failure.
+
+  @see snaky_parse_target_attrib(const char*, char*, size_t, const char*, const char**, snaky_data_type*)
+*/
+SNAKY_API int snaky_parse_target_attrib_str(const char *str, snaky_string *buffer, const char *attrib_name, const char **out_start_pos, snaky_data_type *out_data_type);
+/**
   Searches the given string for the very next attribute and tries to parse its value.
 
   @note Because this function parses the next attribute found, two buffers are required;
@@ -286,6 +316,13 @@ SNAKY_API int snaky_parse_target_attrib(const char *str, char *buffer, size_t bu
   @see snaky_parse_target_attrib(const char*, char*, size_t, const char*, const char**, snaky_data_type*)
 */
 SNAKY_API int snaky_parse_attrib(const char *str, char *name_buffer, size_t name_buffer_size, char *value_buffer, size_t value_buffer_size, const char **out_start_pos, snaky_data_type *out_data_type);
+/**
+  Same as snaky_parse_attrib(...) but uses snaky_strings for the name and value
+  char buffers.
+
+  @see snaky_parse_attrib(const char*, char*, size_t, char*, size_t, const char**, snaky_data_type*)
+*/
+SNAKY_API int snaky_parse_attrib_str(const char *str, snaky_string *name_str, snaky_string *value_str, const char **out_start_pos, snaky_data_type *out_data_type);
 
 /**
   Searches the given string for a specific attribute and removes it entirely.
@@ -340,6 +377,14 @@ SNAKY_API int snaky_set_attrib_str(snaky_string *str, const char *attrib_name, c
   @return 1 on success, 0 on failure.
 */
 SNAKY_API int snaky_set_attribs(char *str, size_t buffer_size, const char *attribs);
+/**
+  Same as snaky_set_attribs(...) but uses a snaky_string instead.
+
+  @return 1 on success, 0 on failure.
+
+  @see snaky_set_attribs(char*, size_t, const char*)
+*/
+SNAKY_API int snaky_set_attribs_str(snaky_string *str, const char *attribs);
 
 /**
   Counts the number of attributes within an attribute string.
@@ -488,9 +533,6 @@ SNAKY_API int snaky_read_file(const char *file_path, char *buffer, size_t buffer
   Same as snaky_read_file(...)
   but uses a snaky_string instead.
 
-  @important If no extension is provided for the file,
-  the 'snakyobjs' extension is assumed.
-
   @see snaky_read_file(const char*, char*, size_t)
 */
 SNAKY_API int snaky_read_file_str(const char *file_path, snaky_string *str);
@@ -505,7 +547,7 @@ SNAKY_API int snaky_read_file_str(const char *file_path, snaky_string *str);
 
   @see snaky_attrib_data
 */
-SNAKY_API int snaky_read_file_data(const char *file_path, snaky_attrib_data *data);
+SNAKY_API int snaky_read_file_data(const char *file_path, snaky_attrib_data *data, snaky_fwrite_mode mode);
 /**
   Opens a file and writes an attribute list to it.
 
@@ -514,7 +556,7 @@ SNAKY_API int snaky_read_file_data(const char *file_path, snaky_attrib_data *dat
 
   @return 1 on success, 0 on failure.
 */
-SNAKY_API int snaky_write_file(const char *file_path, snaky_attrib_data *data);
+SNAKY_API int snaky_write_file(const char *file_path, snaky_attrib_data *data, snaky_fwrite_mode mode);
 /**
   Obtains the next line in a buffer that contains the lines from
   a read file.
